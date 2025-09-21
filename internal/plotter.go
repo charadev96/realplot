@@ -78,7 +78,7 @@ func (p *Plotter) Run() func() {
 				continue
 			}
 			p.push(num)
-			p.plot()
+			p.draw()
 			p.screen.Show()
 		}
 		if err := p.scanner.Err(); err != nil {
@@ -94,35 +94,42 @@ func (p *Plotter) Resize() {
 	width *= brailleWidth
 	p.deque.SetBaseCap(width)
 	p.size = width
-	p.plot()
+	p.draw()
 }
 
-func (p *Plotter) plot() {
+func (p *Plotter) draw() {
 	width, height := p.screen.Size()
-	bottom := height*brailleHeight - 1
-	right := width*brailleWidth - 1
+	p.plot(0, 0, width, height)
+}
+
+func (p *Plotter) plot(x, y, w, h int) {
+	bottom := h*brailleHeight - 1
+	right := w*brailleWidth - 1
 
 	c := draw.NewCanvas()
 
-	x := right
+	ox := right
 	for v := range p.deque.Iter() {
 		mapped := mapRange(v, p.config.BoundMin, p.config.BoundMax, 0, bottom)
-		c.DrawLine(x, bottom, x, bottom-mapped)
-		x--
-		if x == -1 {
+		c.DrawLine(ox, bottom, ox, bottom-mapped)
+		ox--
+		if ox == -1 {
 			break
 		}
 	}
+	p.drawString(x, y, c.String())
+}
 
-	x, y := 0, 0
-	for _, r := range c.String() {
+func (p *Plotter) drawString(x, y int, s string) {
+	ox, oy := x, y
+	for _, r := range s {
 		if r == '\n' {
-			x = 0
-			y++
+			ox = x
+			oy++
 			continue
 		}
-		p.screen.SetContent(x, y, r, nil, tcell.StyleDefault)
-		x++
+		p.screen.SetContent(ox, oy, r, nil, tcell.StyleDefault)
+		ox++
 	}
 }
 
