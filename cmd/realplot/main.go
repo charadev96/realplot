@@ -13,9 +13,13 @@ import (
 	"github.com/mattn/go-isatty"
 )
 
-var args struct {
+type args struct {
 	Min int `arg:"required" help:"lower bound"`
 	Max int `arg:"required" help:"upper bound"`
+}
+
+func (args) Description() string {
+	return "A simple terminal-based bar graph plotter\n"
 }
 
 func eventIsQuit(ev *tcell.EventKey) bool {
@@ -44,6 +48,7 @@ func printErrs(errs <-chan error) {
 }
 
 func main() {
+	var args args
 	arg.MustParse(&args)
 	log.SetFlags(0)
 
