@@ -11,6 +11,14 @@ import (
 )
 
 const (
+	boxTopLeft     = '╭'
+	botBottomLeft  = '╰'
+	boxTopRight    = '╮'
+	boxBottomRight = '╯'
+
+	boxV = '│'
+	boxH = '─'
+
 	brailleHeight = 4
 	brailleWidth  = 2
 )
@@ -34,8 +42,10 @@ func mapRange(value, min1, max1, min2, max2 int) int {
 }
 
 type PlotConfig struct {
-	BoundMin int
-	BoundMax int
+	BoundMin    int
+	BoundMax    int
+	NoBorder    bool
+	StyleBorder tcell.Style
 }
 
 type Plotter struct {
@@ -99,7 +109,13 @@ func (p *Plotter) Resize() {
 
 func (p *Plotter) draw() {
 	width, height := p.screen.Size()
-	p.plot(0, 0, width, height)
+
+	if p.config.NoBorder {
+		p.plot(0, 0, width, height)
+	} else {
+		p.plot(1, 1, width-2, height-2)
+		p.drawBox(0, 0, width-1, height-1)
+	}
 }
 
 func (p *Plotter) plot(x, y, w, h int) {
@@ -131,6 +147,30 @@ func (p *Plotter) drawString(x, y int, s string) {
 		p.screen.SetContent(ox, oy, r, nil, tcell.StyleDefault)
 		ox++
 	}
+}
+
+func (p *Plotter) drawHLine(x, y, l int, style tcell.Style) {
+	for ox := x; ox < x+l; ox++ {
+		p.screen.SetContent(ox, y, boxH, nil, style)
+	}
+}
+
+func (p *Plotter) drawVLine(x, y, l int, style tcell.Style) {
+	for oy := y; oy < y+l; oy++ {
+		p.screen.SetContent(x, oy, boxV, nil, style)
+	}
+}
+
+func (p *Plotter) drawBox(x, y, w, h int) {
+	p.screen.SetContent(x, y, boxTopLeft, nil, p.config.StyleBorder)
+	p.screen.SetContent(x+w, y, boxTopRight, nil, p.config.StyleBorder)
+	p.screen.SetContent(x+w, y+h, boxBottomRight, nil, p.config.StyleBorder)
+	p.screen.SetContent(x, y+h, botBottomLeft, nil, p.config.StyleBorder)
+
+	p.drawHLine(x+1, y, w-1, p.config.StyleBorder)
+	p.drawHLine(x+1, y+h, w-1, p.config.StyleBorder)
+	p.drawVLine(x, y+1, h-1, p.config.StyleBorder)
+	p.drawVLine(x+w, y+1, h-1, p.config.StyleBorder)
 }
 
 func (p *Plotter) push(x int) {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"log"
 	"os"
 	"unicode"
@@ -14,8 +15,17 @@ import (
 )
 
 type args struct {
-	Min int `arg:"required" help:"lower bound"`
-	Max int `arg:"required" help:"upper bound"`
+	Min         int   `arg:"required" help:"lower bound"`
+	Max         int   `arg:"required" help:"upper bound"`
+	NoBorder    bool  `arg:"--no-border" help:"disables the border"`
+	BorderColor color `arg:"--border-color" placeholder:"COLOR" default:"black" help:"color of the border"`
+}
+
+func (args) Epilogue() string {
+	return fmt.Sprintf(
+		"Option COLOR:\n  - Any HEX color (e.g. #ffffff)\n  - Named color: %v",
+		terminalColors,
+	)
 }
 
 func (args) Description() string {
@@ -68,8 +78,10 @@ func main() {
 	scan := bufio.NewScanner(os.Stdin)
 	errPlot := make(chan error)
 	plot := plotter.New(screen, scan, errPlot, plotter.PlotConfig{
-		BoundMin: args.Min,
-		BoundMax: args.Max,
+		BoundMin:    args.Min,
+		BoundMax:    args.Max,
+		NoBorder:    args.NoBorder,
+		StyleBorder: tcell.StyleDefault.Foreground(args.BorderColor.Value),
 	})
 
 	quit := func() {
