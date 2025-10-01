@@ -2,7 +2,6 @@ package main
 
 import (
 	"bufio"
-	"fmt"
 	"log"
 	"os"
 	"unicode"
@@ -12,20 +11,21 @@ import (
 	"github.com/alexflint/go-arg"
 	"github.com/gdamore/tcell/v2"
 	"github.com/mattn/go-isatty"
+	"github.com/mazznoer/colorgrad"
 )
 
 type args struct {
-	Min         int   `arg:"required" help:"lower bound"`
-	Max         int   `arg:"required" help:"upper bound"`
-	NoBorder    bool  `arg:"--no-border" help:"disables the border"`
-	BorderColor color `arg:"--border-color" placeholder:"COLOR" default:"black" help:"color of the border"`
+	Min         int             `arg:"required" help:"lower bound"`
+	Max         int             `arg:"required" help:"upper bound"`
+	NoBorder    bool            `arg:"--no-border" help:"disables the border"`
+	ColorBorder plotter.Color   `arg:"--color-border" placeholder:"COLOR" default:"black" help:"color of the border"`
+	ColorsGraph []plotter.Color `arg:"--colors-graph" placeholder:"COLOR ..." help:"list of colors for the graph (HEX only)"`
 }
 
 func (args) Epilogue() string {
-	return fmt.Sprintf(
-		"Option COLOR:\n  - Any HEX color (e.g. #ffffff)\n  - Named color: %v",
-		terminalColors,
-	)
+	return `Option COLOR:
+  - Any HEX color (e.g. #ffffff)
+  - Named terminal color, refer to https://github.com/gdamore/tcell/blob/v2.9.0/color.go#L851`
 }
 
 func (args) Description() string {
@@ -44,13 +44,15 @@ func eventIsQuit(ev *tcell.EventKey) bool {
 }
 
 func printErrs(errs <-chan error) {
+	c := 1
 	for {
 		select {
 		case err := <-errs:
 			if err == nil {
-				return
+				continue
 			}
-			log.Printf("plotter error: %v", err)
+			log.Printf("plotter (%d): %v", c, err)
+			c++
 		default:
 			return
 		}
@@ -59,8 +61,23 @@ func printErrs(errs <-chan error) {
 
 func main() {
 	var args args
-	arg.MustParse(&args)
+	parser := arg.MustParse(&args)
 	log.SetFlags(0)
+
+	var colorsGraph []colorgrad.Color
+	for _, c := range args.ColorsGraph {
+		if c.Type() == plotter.ColorTerminal {
+			parser.Fail("option --graph-colors cannot contain named colors")
+		}
+		color, err := c.Colorgrad()
+		if err != nil {
+			log.Fatalf("error: %v", err)
+		}
+		colorsGraph = append(colorsGraph, color)
+	}
+	if len(args.ColorsGraph) == 0 {
+		colorsGraph = append(colorsGraph, colorgrad.Color{})
+	}
 
 	if isatty.IsTerminal(os.Stdin.Fd()) {
 		log.Fatal("error: requires stdin from pipe to function")
@@ -76,17 +93,21 @@ func main() {
 	screen.Clear()
 
 	scan := bufio.NewScanner(os.Stdin)
-	errPlot := make(chan error)
-	plot := plotter.New(screen, scan, errPlot, plotter.PlotConfig{
+	errs := make(chan error, 64)
+	plot, err := plotter.New(screen, scan, errs, plotter.PlotConfig{
 		BoundMin:    args.Min,
 		BoundMax:    args.Max,
 		NoBorder:    args.NoBorder,
-		StyleBorder: tcell.StyleDefault.Foreground(args.BorderColor.Value),
+		ColorBorder: args.ColorBorder.Tcell(),
+		ColorsGraph: colorsGraph,
 	})
+	if err != nil {
+		log.Fatalf("error: %v", err)
+	}
 
 	quit := func() {
 		screen.Fini()
-		printErrs(errPlot)
+		printErrs(errs)
 		if r := recover(); r != nil {
 			log.Fatal(r)
 		}

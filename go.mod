@@ -8,6 +8,8 @@ require (
 	github.com/gammazero/deque v1.1.0
 	github.com/gdamore/tcell/v2 v2.9.0
 	github.com/mattn/go-isatty v0.0.20
+	github.com/mazznoer/colorgrad v0.10.0
+	github.com/mazznoer/csscolorparser v0.1.6
 )
 
 require (

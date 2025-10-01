@@ -8,6 +8,7 @@ import (
 	draw "github.com/cjbassi/gotop/src/termui/drawille-go"
 	"github.com/gammazero/deque"
 	"github.com/gdamore/tcell/v2"
+	"github.com/mazznoer/colorgrad"
 )
 
 const (
@@ -45,46 +46,54 @@ type PlotConfig struct {
 	BoundMin    int
 	BoundMax    int
 	NoBorder    bool
-	StyleBorder tcell.Style
+	ColorBorder tcell.Color
+	ColorsGraph []colorgrad.Color
 }
 
 type Plotter struct {
-	size    int
-	config  PlotConfig
-	err     chan<- error
-	screen  tcell.Screen
-	scanner *bufio.Scanner
-	deque   *deque.Deque[int]
+	size     int
+	config   PlotConfig
+	errs     chan<- error
+	screen   tcell.Screen
+	scanner  *bufio.Scanner
+	deque    *deque.Deque[int]
+	gradient colorgrad.Gradient
 }
 
 func New(
 	screen tcell.Screen, scanner *bufio.Scanner,
-	err chan<- error, config PlotConfig,
-) *Plotter {
+	errs chan<- error, config PlotConfig,
+) (*Plotter, error) {
 	deque := new(deque.Deque[int])
 	width, _ := screen.Size()
 	size := width * brailleWidth
 
+	grad, err := colorgrad.NewGradient().Colors(config.ColorsGraph...).Build()
+	if err != nil {
+		return nil, err
+	}
+
 	deque.SetBaseCap(size)
 	p := Plotter{
-		size:    size,
-		config:  config,
-		err:     err,
-		screen:  screen,
-		scanner: scanner,
-		deque:   deque,
+		size:     size,
+		config:   config,
+		errs:     errs,
+		screen:   screen,
+		scanner:  scanner,
+		deque:    deque,
+		gradient: grad,
 	}
-	return &p
+	return &p, nil
 }
 
 func (p *Plotter) Run() func() {
 	f := func() {
-		defer close(p.err)
+		defer close(p.errs)
 		for p.scanner.Scan() {
 			text := p.scanner.Text()
 			num, err := strconv.Atoi(text)
 			if err != nil {
-				p.err <- err
+				p.errs <- err
 				continue
 			}
 			p.push(num)
@@ -92,7 +101,7 @@ func (p *Plotter) Run() func() {
 			p.screen.Show()
 		}
 		if err := p.scanner.Err(); err != nil {
-			p.err <- err
+			p.errs <- err
 			return
 		}
 	}
@@ -122,6 +131,8 @@ func (p *Plotter) plot(x, y, w, h int) {
 	bottom := h*brailleHeight - 1
 	right := w*brailleWidth - 1
 
+	styles := make(map[int]tcell.Style)
+
 	c := draw.NewCanvas()
 
 	ox := right
@@ -133,19 +144,32 @@ func (p *Plotter) plot(x, y, w, h int) {
 			break
 		}
 	}
-	p.drawString(x, y, c.String())
+
+	for oy := range h {
+		percent := float64(oy) / float64(h)
+		color := tcell.GetColor(p.gradient.At(percent).HexString())
+		styles[oy*w] = tcell.StyleDefault.Foreground(color)
+	}
+
+	p.drawString(x, y, c.String(), styles)
 }
 
-func (p *Plotter) drawString(x, y int, s string) {
+func (p *Plotter) drawString(x, y int, s string, styles map[int]tcell.Style) {
 	ox, oy := x, y
+	pos := 0
+	style := tcell.StyleDefault
 	for _, r := range s {
+		if st, ok := styles[pos]; ok {
+			style = st
+		}
 		if r == '\n' {
 			ox = x
 			oy++
 			continue
 		}
-		p.screen.SetContent(ox, oy, r, nil, tcell.StyleDefault)
+		p.screen.SetContent(ox, oy, r, nil, style)
 		ox++
+		pos++
 	}
 }
 
@@ -162,15 +186,17 @@ func (p *Plotter) drawVLine(x, y, l int, style tcell.Style) {
 }
 
 func (p *Plotter) drawBox(x, y, w, h int) {
-	p.screen.SetContent(x, y, boxTopLeft, nil, p.config.StyleBorder)
-	p.screen.SetContent(x+w, y, boxTopRight, nil, p.config.StyleBorder)
-	p.screen.SetContent(x+w, y+h, boxBottomRight, nil, p.config.StyleBorder)
-	p.screen.SetContent(x, y+h, botBottomLeft, nil, p.config.StyleBorder)
+	style := tcell.StyleDefault.Foreground(p.config.ColorBorder)
 
-	p.drawHLine(x+1, y, w-1, p.config.StyleBorder)
-	p.drawHLine(x+1, y+h, w-1, p.config.StyleBorder)
-	p.drawVLine(x, y+1, h-1, p.config.StyleBorder)
-	p.drawVLine(x+w, y+1, h-1, p.config.StyleBorder)
+	p.screen.SetContent(x, y, boxTopLeft, nil, style)
+	p.screen.SetContent(x+w, y, boxTopRight, nil, style)
+	p.screen.SetContent(x+w, y+h, boxBottomRight, nil, style)
+	p.screen.SetContent(x, y+h, botBottomLeft, nil, style)
+
+	p.drawHLine(x+1, y, w-1, style)
+	p.drawHLine(x+1, y+h, w-1, style)
+	p.drawVLine(x, y+1, h-1, style)
+	p.drawVLine(x+w, y+1, h-1, style)
 }
 
 func (p *Plotter) push(x int) {
